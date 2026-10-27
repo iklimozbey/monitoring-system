@@ -1,4 +1,5 @@
 import os
+import logging
 import subprocess
 import threading
 import asyncio
@@ -12,6 +13,12 @@ import ipaddress
 from pydantic import BaseModel, field_validator
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("monitoring")
 
 # ===================================
 # DATABASE CONNECTION HELPER
@@ -120,11 +127,11 @@ def monitor_devices():
                             """,
                             (device_id, old_status, new_status)
                         )
-                        print(f"Device {device_id} ({ip_address}): {old_status} -> {new_status}")
+                        logger.info(f"Device {device_id} ({ip_address}): {old_status} -> {new_status}")
             conn.commit()
         return {"message": "Monitoring completed successfully"}
     except Exception as e:
-        print(f"Monitoring error: {e}")
+        logger.error(f"Monitoring error: {e}")
         return {"error": str(e)}
     finally:
         monitor_lock.release()
@@ -136,7 +143,7 @@ async def monitoring_loop():
         try:
             await asyncio.to_thread(monitor_devices)
         except Exception as e:
-            print("Monitoring loop error: ", e)
+            logger.error(f"Monitoring loop error: {e}")
         await asyncio.sleep(30)
 
 # ===================================
@@ -220,7 +227,7 @@ R_500 = {500: {"model": ErrorResponse, "description": "Beklenmeyen sunucu hatas�
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc):
     # Beklenmeyen hatalarda iç ayrıntıyı istemciye vermeden tutarlı {"detail": ...} gövdesi döner
-    print(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 # ===================================
@@ -243,7 +250,7 @@ def health_check():
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     except Exception as e:
-        print(f"db_connection_failed: {e}")
+        logger.error(f"db_connection_failed: {e}")
         # DB yoksa 200 dönmemeli: Docker healthcheck ve izleme araçları HTTP koduna bakar
         return JSONResponse(
             status_code=503,
