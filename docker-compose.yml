@@ -4,9 +4,9 @@ services:
     container_name: monitoring-database
     restart: unless-stopped
     environment:
-      POSTGRES_DB: monitoring_db
-      POSTGRES_USER: monitoring_user
-      POSTGRES_PASSWORD: monitoring_pass
+      POSTGRES_DB: ${DB_NAME:-monitoring_db}
+      POSTGRES_USER: ${DB_USER:-monitoring_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
     networks:
       - monitoring-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U monitoring_user -d monitoring_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-monitoring_user} -d ${DB_NAME:-monitoring_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,9 +29,9 @@ services:
     environment:
       DB_HOST: database
       DB_PORT: 5432
-      DB_NAME: monitoring_db
-      DB_USER: monitoring_user
-      DB_PASSWORD: monitoring_pass
+      DB_NAME: ${DB_NAME:-monitoring_db}
+      DB_USER: ${DB_USER:-monitoring_user}
+      DB_PASSWORD: ${DB_PASSWORD}
     ports:
       - "8080:8080"
     depends_on:

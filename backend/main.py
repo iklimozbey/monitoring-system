@@ -23,7 +23,7 @@ def get_db(connect_timeout: int | None = None):
     return psycopg.connect(
         dbname=os.getenv("DB_NAME", "monitoring_db"),
         user=os.getenv("DB_USER", "monitoring_user"),
-        password=os.getenv("DB_PASSWORD", "monitoring_pass"),
+        password=os.getenv("DB_PASSWORD"),
         host=os.getenv("DB_HOST", "database"),
         port=os.getenv("DB_PORT", "5432"),
         **kwargs
