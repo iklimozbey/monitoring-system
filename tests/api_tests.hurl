@@ -21,16 +21,30 @@ POST http://localhost:8080/devices
 Content-Type: application/json
 {
     "name": "Hurl Test Gateway",
-    "ip_address": "127.0.0.1",
+    "ip_address": "192.0.2.99",
     "device_type": "Router"
 }
 HTTP 201
 [Asserts]
 jsonpath "$.name" == "Hurl Test Gateway"
-jsonpath "$.ip_address" == "127.0.0.1"
+jsonpath "$.ip_address" == "192.0.2.99"
 jsonpath "$.status" == "UNKNOWN"
 [Captures]
 new_device_id: jsonpath "$.id"
+
+# ==========================================
+# 3b. Negative Test: Duplicate IP (409)
+# ==========================================
+POST http://localhost:8080/devices
+Content-Type: application/json
+{
+    "name": "Duplicate Gateway",
+    "ip_address": "192.0.2.99",
+    "device_type": "Router"
+}
+HTTP 409
+[Asserts]
+jsonpath "$.detail" == "A device with this IP address already exists"
 
 # ==========================================
 # 4. Get Single Device by Captured ID

@@ -46,7 +46,23 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-app = FastAPI(title="Monitoring System API", lifespan=lifespan)
+app = FastAPI(
+    title="Monitoring System API",
+    version="1.0.0",
+    description=(
+        "Ağ cihazlarını (IP/ping) izleyen sistemin REST API'si.\n\n"
+        "**Hata gövdesi:** Tüm hatalar `{\"detail\": ...}` biçimindedir. "
+        "Doğrulama hatalarında (`422`) `detail` bir liste, diğerlerinde bir metindir.\n\n"
+        "**Kimlik doğrulama:** Şu an yoktur, bu yüzden `401`/`403` dönülmez."
+    ),
+    openapi_tags=[
+        {"name": "Health", "description": "Servis ve veritabanı sağlık kontrolü"},
+        {"name": "Devices", "description": "Cihaz CRUD işlemleri"},
+        {"name": "Monitoring", "description": "Ping ile durum kontrolü ve geçmiş"},
+        {"name": "Dashboard", "description": "Özet istatistikler"},
+    ],
+    lifespan=lifespan,
+)
 
 # ===================================
 # 2. CORS SETTINGS
@@ -158,10 +174,67 @@ class DeviceUpdate(BaseModel):
         return v
 
 # ===================================
+# 4.1 RESPONSE MODELS (OpenAPI)
+# ===================================
+class DeviceOut(BaseModel):
+    id: int
+    name: str
+    ip_address: str
+    device_type: str
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+class MessageResponse(BaseModel):
+    message: str
+    id: int
+
+class HealthResponse(BaseModel):
+    status: str
+    database: str
+
+class HistoryOut(BaseModel):
+    id: int
+    device_id: int
+    device_name: str
+    old_status: str | None = None
+    new_status: str
+    changed_at: str | None = None
+
+class DashboardSummary(BaseModel):
+    total_devices: int
+    up_devices: int
+    down_devices: int
+
+# Ortak hata cevapları: Swagger'da her endpoint için görünür
+R_404 = {404: {"model": ErrorResponse, "description": "Cihaz bulunamadı",
+               "content": {"application/json": {"example": {"detail": "Device not found"}}}}}
+R_409 = {409: {"model": ErrorResponse, "description": "Aynı IP adresli cihaz zaten mevcut",
+               "content": {"application/json": {"example": {"detail": "A device with this IP address already exists"}}}}}
+R_500 = {500: {"model": ErrorResponse, "description": "Beklenmeyen sunucu hatası",
+               "content": {"application/json": {"example": {"detail": "Internal server error"}}}}}
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    # Beklenmeyen hatalarda iç ayrıntıyı istemciye vermeden tutarlı {"detail": ...} gövdesi döner
+    print(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+# ===================================
 # 5. API ENDPOINTS
 # ===================================
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Servis ve veritabanı sağlığı",
+    response_model=HealthResponse,
+    responses={503: {"description": "Veritabanına ulaşılamıyor",
+                     "content": {"application/json": {"example": {"status": "unhealthy", "database": "down"}}}}},
+)
 def health_check():
     # Veritabanına bağlanıp basit bir sorgu çalıştırarak DB'nin ulaşılabilir olduğunu doğrular.
     # 3 sn bağlantı zaman aşımı: DB kapalıyken health isteği asılı kalmaz.
@@ -178,7 +251,8 @@ def health_check():
         )
     return {"status": "healthy", "database": "up"}
 
-@app.get("/devices")
+@app.get("/devices", tags=["Devices"], summary="Tüm cihazları listele",
+         response_model=list[DeviceOut], responses={**R_500})
 def get_devices():
     with get_db() as conn:
         with conn.cursor() as cursor:
@@ -203,7 +277,8 @@ def get_devices():
                 for row in rows
             ]
 
-@app.get("/devices/{device_id}")
+@app.get("/devices/{device_id}", tags=["Devices"], summary="Tek cihazı getir",
+         response_model=DeviceOut, responses={**R_404, **R_500})
 def get_device(device_id: int):
     with get_db() as conn:
         with conn.cursor() as cursor:
@@ -227,7 +302,8 @@ def get_device(device_id: int):
                 "updated_at": row[6].isoformat() if row[6] else None
             }
 
-@app.post("/devices", status_code=201)
+@app.post("/devices", status_code=201, tags=["Devices"], summary="Yeni cihaz oluştur",
+          response_model=DeviceOut, responses={**R_409, **R_500})
 def create_device(device: DeviceCreate):
     with get_db() as conn:
         with conn.cursor() as cursor:
@@ -255,12 +331,16 @@ def create_device(device: DeviceCreate):
                 "updated_at": row[6].isoformat() if row[6] else None
             }
 
-@app.post("/monitor")
-@app.get("/monitor")
+@app.post("/monitor", tags=["Monitoring"], summary="Ping kontrolünü şimdi çalıştır")
+@app.get("/monitor", tags=["Monitoring"], summary="Ping kontrolünü şimdi çalıştır")
 def run_monitoring():
     return monitor_devices()
 
-@app.patch("/devices/{device_id}")
+@app.patch("/devices/{device_id}", tags=["Devices"], summary="Cihazı kısmen güncelle",
+           response_model=DeviceOut,
+           responses={400: {"model": ErrorResponse, "description": "Hiç alan gönderilmedi",
+                            "content": {"application/json": {"example": {"detail": "No fields provided"}}}},
+                      **R_404, **R_409, **R_500})
 def update_device(device_id: int, device: DeviceUpdate):
     updates = device.model_dump(exclude_unset=True)
 
@@ -309,7 +389,8 @@ def update_device(device_id: int, device: DeviceUpdate):
                 "updated_at": row[6].isoformat() if row[6] else None
             }
 
-@app.delete("/devices/{device_id}")
+@app.delete("/devices/{device_id}", tags=["Devices"], summary="Cihazı sil",
+            response_model=MessageResponse, responses={**R_404, **R_500})
 def delete_device(device_id: int):
     with get_db() as conn:
         with conn.cursor() as cursor:
@@ -320,7 +401,8 @@ def delete_device(device_id: int):
             conn.commit()
             return {"message": "Device deleted successfully", "id": row[0]}
 
-@app.get("/monitoring-history")
+@app.get("/monitoring-history", tags=["Monitoring"], summary="Son 50 durum değişikliği",
+         response_model=list[HistoryOut], responses={**R_500})
 def get_monitoring_history():
     with get_db() as conn:
         with conn.cursor() as cursor:
@@ -344,7 +426,8 @@ def get_monitoring_history():
             for row in rows
         ]
 
-@app.get("/dashboard/summary")
+@app.get("/dashboard/summary", tags=["Dashboard"], summary="Cihaz sayısı özeti",
+         response_model=DashboardSummary, responses={**R_500})
 def get_dashboard_summary():
     with get_db() as conn:
         with conn.cursor() as cursor:
