@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS devices (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Aynı IP adresli iki cihaz eklenmesini veritabanı seviyesinde engeller
+CREATE UNIQUE INDEX IF NOT EXISTS devices_ip_address_unique ON devices (ip_address);
+
 -- Monitoring history log table
 CREATE TABLE IF NOT EXISTS monitoring_history (
     id SERIAL PRIMARY KEY,

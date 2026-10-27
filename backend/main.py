@@ -158,6 +158,13 @@ class DeviceUpdate(BaseModel):
 
 @app.get("/health")
 def health_check():
+    # Veritabanına bağlanıp basit bir sorgu çalıştırarak DB'nin ulaşılabilir olduğunu doğrular
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     return {"status": "healthy"}
 
 @app.get("/devices")
@@ -213,6 +220,10 @@ def get_device(device_id: int):
 def create_device(device: DeviceCreate):
     with get_db() as conn:
         with conn.cursor() as cursor:
+            # Aynı IP adresine sahip cihaz zaten varsa ekleme
+            cursor.execute("SELECT 1 FROM devices WHERE ip_address = %s", (device.ip_address,))
+            if cursor.fetchone() is not None:
+                raise HTTPException(status_code=409, detail="A device with this IP address already exists")
             cursor.execute(
                 """
                 INSERT INTO devices (name, ip_address, device_type)
@@ -264,6 +275,14 @@ def update_device(device_id: int, device: DeviceUpdate):
 
     with get_db() as conn:
         with conn.cursor() as cursor:
+            # IP değiştiriliyorsa başka bir cihazda aynı IP olmamalı
+            if "ip_address" in updates:
+                cursor.execute(
+                    "SELECT 1 FROM devices WHERE ip_address = %s AND id <> %s",
+                    (updates["ip_address"], device_id)
+                )
+                if cursor.fetchone() is not None:
+                    raise HTTPException(status_code=409, detail="A device with this IP address already exists")
             cursor.execute(query, values)
             row = cursor.fetchone()
             if row is None:

@@ -1,0 +1,11 @@
+# Build context'e ve image'a girmemesi gerekenler
+venv/
+__pycache__/
+*.pyc
+.env
+*.save
+*.log
+.git
+.gitignore
+Dockerfile
+.dockerignore
