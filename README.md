@@ -1,5 +1,50 @@
 # Monitoring System
 
+Ağ cihazlarını (IP/ping) periyodik olarak izleyen 3 katmanlı (Frontend, Backend, PostgreSQL) Docker tabanlı izleme sistemi.
+
+## Kurulum ve Çalıştırma
+
+### 1. Önkoşullar
+- Docker ve Docker Compose (`docker-compose` veya `docker compose`)
+- Boş portlar: `3000` (Frontend), `8080` (Backend), `5433` (PostgreSQL)
+
+### 2. Adım Adım Başlatma
+
+```bash
+# 1. Projeyi klonlayın ve dizine girin
+git clone <repo-url>
+cd monitoring-system
+
+# 2. Ortam değişkenleri dosyasını oluşturun ve içindeki DB_PASSWORD değerini belirleyin
+cp .env.example .env
+
+# 3. Tüm servisleri tek komutla derleyip başlatın
+docker-compose up --build -d
+```
+
+### 3. Başka Bir Makinede Kurulum Doğrulama Adımları
+
+Sistemi yeni bir bilgisayarda ayağa kaldırdıktan sonra doğru çalıştığını doğrulamak için sırasıyla şu kontrolleri yapın:
+
+1. **Container durumlarını kontrol edin:**
+   ```bash
+   docker-compose ps
+   ```
+   `monitoring-database`, `monitoring-backend` ve `monitoring-frontend` servislerinin `Up` ve `healthy` durumda olduğunu görün.
+2. **Health endpoint'ini test edin:**
+   ```bash
+   curl http://localhost:8080/health
+   ```
+   Cevap olarak `{"status":"healthy","database":"up"}` dönmelidir.
+3. **Web arayüzünü ve Swagger'ı açın:**
+   - Arayüz: `http://localhost:3000` adresinden cihaz listesinin geldiğini ve yeni cihaz eklenebildiğini doğrulayın.
+   - Swagger: `http://localhost:8080/docs` adresinin açıldığını kontrol edin.
+4. **Veri kalıcılığını (persistent volume) doğrulayın:**
+   ```bash
+   docker-compose rm -sf database && docker-compose up -d database
+   ```
+   Veritabanı container'ı silinip yeniden oluşturulduğunda eklediğiniz cihazların kaybolmadığını kontrol edin.
+
 ## Backend Dockerfile (`backend/Dockerfile`)
 
 Dockerfile, backend'in container image'ının nasıl üretileceğini adım adım tarif eder. Her satırın açıklaması dosyanın içinde yorum olarak da bulunur. Özet:
