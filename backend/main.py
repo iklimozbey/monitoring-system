@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import psycopg
 from dotenv import load_dotenv
 import ipaddress
@@ -15,13 +16,17 @@ load_dotenv()
 # ===================================
 # DATABASE CONNECTION HELPER
 # ===================================
-def get_db():
+def get_db(connect_timeout: int | None = None):
+    kwargs = {}
+    if connect_timeout is not None:
+        kwargs["connect_timeout"] = connect_timeout
     return psycopg.connect(
         dbname=os.getenv("DB_NAME", "monitoring_db"),
         user=os.getenv("DB_USER", "monitoring_user"),
         password=os.getenv("DB_PASSWORD", "monitoring_pass"),
         host=os.getenv("DB_HOST", "database"),
-        port=os.getenv("DB_PORT", "5432")
+        port=os.getenv("DB_PORT", "5432"),
+        **kwargs
     )
 
 # ===================================
@@ -158,14 +163,20 @@ class DeviceUpdate(BaseModel):
 
 @app.get("/health")
 def health_check():
-    # Veritabanına bağlanıp basit bir sorgu çalıştırarak DB'nin ulaşılabilir olduğunu doğrular
+    # Veritabanına bağlanıp basit bir sorgu çalıştırarak DB'nin ulaşılabilir olduğunu doğrular.
+    # 3 sn bağlantı zaman aşımı: DB kapalıyken health isteği asılı kalmaz.
     try:
-        with get_db() as conn:
+        with get_db(connect_timeout=3) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    return {"status": "healthy"}
+    except Exception as e:
+        print(f"db_connection_failed: {e}")
+        # DB yoksa 200 dönmemeli: Docker healthcheck ve izleme araçları HTTP koduna bakar
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "database": "down"}
+        )
+    return {"status": "healthy", "database": "up"}
 
 @app.get("/devices")
 def get_devices():
